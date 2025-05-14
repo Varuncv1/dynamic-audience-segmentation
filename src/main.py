@@ -1,0 +1,49 @@
+# src/main.py
+
+import numpy as np
+from river.cluster import KMeans as RiverKMeans
+from sklearn.cluster import MiniBatchKMeans
+
+from src.data.stream import stream_batches
+from src.features.engineer import extract_features
+from src.utils.viz import plot_clusters
+from src.config import N_CLUSTERS
+
+
+def run():
+    # Instantiate models
+    river_kmeans = RiverKMeans(n_clusters=N_CLUSTERS)
+    minibatch_kmeans = MiniBatchKMeans(
+        n_clusters=N_CLUSTERS,
+        batch_size=100,
+        random_state=42
+    )
+
+    history_centers_river = []
+    history_centers_sklearn = []
+
+    for batch in stream_batches():
+        feats_list = [extract_features(sess) for sess in batch]
+
+        # Train River KMeans (in‐place)
+        for feats in feats_list:
+            river_kmeans.learn_one(feats)   # no reassignment here
+
+        # Train MiniBatchKMeans on full batch
+        X_batch = np.array([list(f.values()) for f in feats_list])
+        minibatch_kmeans.partial_fit(X_batch)
+
+        # Record centroids
+        river_centroids = np.vstack(list(river_kmeans.centers.values()))
+        sklearn_centroids = minibatch_kmeans.cluster_centers_
+
+        history_centers_river.append(river_centroids)
+        history_centers_sklearn.append(sklearn_centroids)
+
+    # Plot drift
+    plot_clusters(history_centers_river)
+    plot_clusters(history_centers_sklearn)
+
+
+if __name__ == "__main__":
+    run()
